@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 	<head>
-		<title> three.js webgl - ShadowMesh </title>
+		<title> three.js webgl - Character Controller </title>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 		<link type="text/css" rel="stylesheet" href="main.css">
@@ -9,50 +9,18 @@
 			body {
 				margin: 0;
 				padding: 0;
-				overflow: hidden; /* Prevent scrollbars */
-				background-color: #333;
-			}
-			#info {
-				position: absolute;
-				top: 10px;
-				width: 100%;
-				text-align: center;
-				z-index: 100;
-				display: block;
-				color: white;
-				text-shadow: 1px 1px 1px rgba(0,0,0,0.8);
-			}
-			#info a {
-				color: #f8d825;
-			}
-			#lightButton {
-				margin-top: 5px;
-				padding: 5px 10px;
-				background-color: rgba(0,0,0,0.5);
-				color: white;
-				border: 1px solid white;
-				cursor: pointer;
-			}
-			#lightButton:hover {
-				background-color: rgba(50,50,50,0.7);
+				overflow: hidden;
 			}
 			#container {
 				position: absolute;
-				top: 0;
-				left: 0;
 				width: 100%;
 				height: 100%;
-				box-sizing: border-box;
-				padding: 20px; /* Add padding around the game */
+				left: 0;
+				top: 0;
 			}
 		</style>
 	</head>
 	<body>
-		<div id="info">
-			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - shadow mesh<br />
-			<input id="lightButton" type="button" value="Switch to PointLight">
-		</div>
-
 		<div id="container"></div>
 
 		<script type="importmap">
@@ -67,11 +35,9 @@
 		<script type="module">
 
 			import * as THREE from 'three';
-
 			import { ShadowMesh } from 'three/addons/objects/ShadowMesh.js';
-			import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
-			import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
-
+			import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+			
 			let SCREEN_WIDTH = window.innerWidth;
 			let SCREEN_HEIGHT = window.innerHeight;
 
@@ -79,17 +45,6 @@
 			const camera = new THREE.PerspectiveCamera( 55, SCREEN_WIDTH / SCREEN_HEIGHT, 1, 3000 );
 			const clock = new THREE.Clock();
 			const renderer = new THREE.WebGLRenderer( { stencil: true } );
-
-			// Character and physics variables
-			let character;
-			let characterShadow;
-			const gravity = 9.8;
-			let velocity = new THREE.Vector3(0, 0, 0);
-			let isJumping = false;
-			let isOnGround = false;
-			const moveSpeed = 3.0;
-			const jumpForce = 5.0;
-			const keysPressed = {};
 
 			const sunLight = new THREE.DirectionalLight( 'rgb(255,255,255)', 3 );
 			let useDirectionalLight = true;
@@ -114,28 +69,58 @@
 			let frameTime = 0;
 			const TWO_PI = Math.PI * 2;
 
-			// Pet variables
-			let pet;
-			let petShadow;
-			let petLoaded = false;
-			const petOffset = new THREE.Vector3(1, 0, 1); // Offset from character
-			const petFollowSpeed = 2.0;
-			const petScale = 0.5; // Scale for the pet model
+			// Character controller
+			let player;
+			let playerShadow;
+			const playerSize = 0.5;
+			const moveSpeed = 5;
+			const jumpForce = 10;
+			const gravity = 20;
+			let playerVelocity = new THREE.Vector3();
+			let onGround = false;
+			
+			// Input handling
+			const keys = {
+				w: false,
+				a: false,
+				s: false,
+				d: false,
+				space: false
+			};
+			
+			// Mouse controls
+			let mouseEnabled = false;
+			let cameraRotation = new THREE.Vector2(0, 0); // x: horizontal, y: vertical
+			const mouseSensitivity = 0.005;
+			const cameraDistance = 5;
+			const cameraHeight = 2;
+			const cameraTarget = new THREE.Vector3();
+			const PI_2 = Math.PI / 2;
+			
+			// Object loading and management
+			const gltfLoader = new GLTFLoader();
+			const loadedObjects = {};
+			let websocket;
 
 			init();
+			initWebSocket();
 
 			function init() {
-
 				scene.background = new THREE.Color( 0x0096ff );
 
 				renderer.setPixelRatio( window.devicePixelRatio );
-				renderer.setSize( SCREEN_WIDTH - 40, SCREEN_HEIGHT - 40 ); // Reduce size by padding amount
+				renderer.setSize( SCREEN_WIDTH, SCREEN_HEIGHT );
 				renderer.setAnimationLoop( animate );
 				document.getElementById( 'container' ).appendChild( renderer.domElement );
 			
 				window.addEventListener( 'resize', onWindowResize );
-
-				camera.position.set( 0, 5, 15 );
+				window.addEventListener( 'keydown', handleKeyDown );
+				window.addEventListener( 'keyup', handleKeyUp );
+				window.addEventListener( 'mousemove', handleMouseMove );
+				window.addEventListener( 'mousedown', handleMouseDown );
+				window.addEventListener( 'mouseup', handleMouseUp );
+				
+				camera.position.set( 0, 3, 10 );
 				scene.add( camera );
 				onWindowResize();
 
@@ -184,6 +169,16 @@
 				groundMesh = new THREE.Mesh( groundGeometry, groundMaterial );
 				groundMesh.position.y = 0.0; //this value must be slightly lower than the planeConstant (0.01) parameter above
 				scene.add( groundMesh );
+
+				// PLAYER CHARACTER
+				const playerGeometry = new THREE.BoxGeometry( playerSize, playerSize, playerSize );
+				const playerMaterial = new THREE.MeshLambertMaterial( { color: 'rgb(0,100,255)', emissive: 0x000040 } );
+				player = new THREE.Mesh( playerGeometry, playerMaterial );
+				player.position.set( 0, playerSize/2 + 0.01, 0 ); // Position just above ground
+				scene.add( player );
+				
+				playerShadow = new ShadowMesh( player );
+				scene.add( playerShadow );
 
 				// RED CUBE and CUBE's SHADOW
 				const cubeGeometry = new THREE.BoxGeometry( 1, 1, 1 );
@@ -235,273 +230,309 @@
 				pyramidShadow = new ShadowMesh( pyramid );
 				scene.add( pyramidShadow );
 
-				// Add controllable character (cube)
-				const characterGeometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
-				const characterMaterial = new THREE.MeshLambertMaterial({ color: 'rgb(0,255,255)', emissive: 0x002222 });
-				character = new THREE.Mesh(characterGeometry, characterMaterial);
-				character.position.set(0, 5, 0); // Start position above the ground
-				scene.add(character);
+				// Create a button for switching light type that's small and in the corner
+				const lightButton = document.createElement('button');
+				lightButton.style.position = 'absolute';
+				lightButton.style.bottom = '10px';
+				lightButton.style.right = '10px';
+				lightButton.style.zIndex = '100';
+				lightButton.textContent = 'Switch Light';
+				lightButton.addEventListener('click', lightButtonHandler);
+				document.body.appendChild(lightButton);
+			}
+			
+			function initWebSocket() {
+				// Change this URL to your WebSocket server
+				const wsUrl = 'ws://localhost:8080';
+				
+				try {
+					websocket = new WebSocket(wsUrl);
+					
+					websocket.onopen = function() {
+						console.log('WebSocket connected');
+					};
+					
+					websocket.onclose = function() {
+						console.log('WebSocket disconnected');
+						// Try to reconnect after 5 seconds
+						setTimeout(initWebSocket, 5000);
+					};
+					
+					websocket.onerror = function(error) {
+						console.error('WebSocket error:', error);
+					};
+					
+					websocket.onmessage = function(event) {
+						handleWebSocketMessage(event.data);
+					};
+				} catch (error) {
+					console.error('WebSocket initialization error:', error);
+				}
+			}
+			
+			function handleWebSocketMessage(message) {
+				try {
+					const data = JSON.parse(message);
+					
+					// Check if this is an object loading message
+					if (data.type === 'load-object' && data.path && data.position) {
+						loadObject(
+							data.id || generateObjectId(), 
+							data.path, 
+							data.position,
+							data.rotation || { x: 0, y: 0, z: 0 },
+							data.scale || { x: 1, y: 1, z: 1 }
+						);
+					}
+					
+					// Check if this is a request for object positions
+					else if (data.type === 'get-object-positions') {
+						sendObjectPositions(data.requestId);
+					}
+					
+					// Handle other message types if needed
+					
+				} catch (error) {
+					console.error('Error handling WebSocket message:', error);
+				}
+			}
+			
+			function generateObjectId() {
+				return 'obj_' + Math.random().toString(36).substr(2, 9);
+			}
+			
+			function loadObject(id, path, position, rotation, scale) {
+				console.log(`Loading object: ${path} at position:`, position);
+				
+				// If we already have an object with this ID, remove it first
+				if (loadedObjects[id]) {
+					scene.remove(loadedObjects[id]);
+					if (loadedObjects[id].shadows && loadedObjects[id].shadows.length > 0) {
+						loadedObjects[id].shadows.forEach(shadow => {
+							scene.remove(shadow);
+						});
+					}
+				}
+				
+				// Add more verbose debugging
+				console.log(`Starting GLTFLoader.load for ${path}`);
+				
+				// Load the GLB/GLTF model
+				gltfLoader.load(
+					path,
+					// onLoad callback
+					function(gltf) {
+						console.log(`GLB/GLTF loaded successfully:`, gltf);
+						
+						const object = gltf.scene;
+						
+						// Calculate dimensions to adjust position
+						let treeHeight = 0;
+						
+						// Compute the bounding box to get the tree height
+						const boundingBox = new THREE.Box3().setFromObject(object);
+						treeHeight = boundingBox.max.y - boundingBox.min.y;
+						
+						console.log(`Tree height: ${treeHeight}`);
+						
+						// Adjust Y position to place the trunk at ground level
+						// We assume the model's bottom is at the trunk base
+						const adjustedY = position.y + (treeHeight / 2) * scale.y;
+						
+						// Set position with adjusted Y
+						object.position.set(position.x, adjustedY, position.z);
+						
+						// Set rotation if provided
+						object.rotation.set(rotation.x, rotation.y, rotation.z);
+						
+						// Set scale if provided
+						object.scale.set(scale.x, scale.y, scale.z);
+						
+						// Store the original path for reference
+						object.userData.path = path;
+						
+						// Add to scene
+						scene.add(object);
+						console.log(`Added object to scene at adjusted Y: ${adjustedY}`);
+						
+						// Create shadow for the object
+						try {
+							// GLB/GLTF objects often contain multiple meshes in a hierarchy
+							// We need to handle each mesh separately for shadows
+							const meshes = [];
+							object.traverse(child => {
+								if (child.isMesh) {
+									meshes.push(child);
+								}
+							});
+							
+							console.log(`Found ${meshes.length} meshes to create shadows for`);
+							
+							// Store all shadows for this object
+							const shadows = [];
+							
+							// Create shadows for each mesh
+							for (const mesh of meshes) {
+								const shadow = new ShadowMesh(mesh);
+								scene.add(shadow);
+								shadows.push(shadow);
+							}
+							
+							// Store references
+							object.shadows = shadows;
+							loadedObjects[id] = object;
+							
+							console.log(`Object loaded with ID: ${id} and ${shadows.length} shadows`);
+						} catch(error) {
+							console.error(`Error creating shadow:`, error);
+							// Still store the object even without a shadow
+							loadedObjects[id] = object;
+						}
+					},
+					// onProgress callback
+					function(xhr) {
+						console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+					},
+					// onError callback
+					function(error) {
+						console.error('Error loading GLB/GLTF:', error);
+					}
+				);
+			}
 
-				// Add shadow for the character
-				characterShadow = new ShadowMesh(character);
-				scene.add(characterShadow);
+			function handleMouseDown(event) {
+				if (event.button === 0) { // Left mouse button
+					mouseEnabled = true;
+					document.getElementById('container').style.cursor = 'grabbing';
+				}
+			}
 
-				// Add keyboard event listeners
-				document.addEventListener('keydown', handleKeyDown);
-				document.addEventListener('keyup', handleKeyUp);
+			function handleMouseUp(event) {
+				if (event.button === 0) { // Left mouse button
+					mouseEnabled = false;
+					document.getElementById('container').style.cursor = 'grab';
+				}
+			}
 
-				document.getElementById( 'lightButton' ).addEventListener( 'click', lightButtonHandler );
-
-				// Add file input for pet OBJ
-				const fileInput = document.createElement('input');
-				fileInput.type = 'file';
-				fileInput.id = 'petFileInput';
-				fileInput.accept = '.obj,.mtl';
-				fileInput.multiple = true;
-				fileInput.style.display = 'none';
-				document.body.appendChild(fileInput);
-
-				const petButton = document.createElement('input');
-				petButton.type = 'button';
-				petButton.id = 'petButton';
-				petButton.value = 'Add Pet';
-				petButton.style.marginLeft = '10px';
-				petButton.style.padding = '5px 10px';
-				petButton.style.backgroundColor = 'rgba(0,0,0,0.5)';
-				petButton.style.color = 'white';
-				petButton.style.border = '1px solid white';
-				petButton.style.cursor = 'pointer';
-				document.getElementById('info').appendChild(petButton);
-
-				petButton.addEventListener('click', () => {
-					fileInput.click();
-				});
-
-				fileInput.addEventListener('change', loadPetFromFile);
-
+			function handleMouseMove(event) {
+				if (mouseEnabled) {
+					cameraRotation.x -= event.movementX * mouseSensitivity;
+					cameraRotation.y += event.movementY * mouseSensitivity;
+					
+					// Limit vertical rotation to avoid flipping
+					cameraRotation.y = Math.max(-PI_2 + 0.1, Math.min(PI_2 - 0.1, cameraRotation.y));
+				}
 			}
 
 			function handleKeyDown(event) {
-				keysPressed[event.key.toLowerCase()] = true;
-				
-				// Prevent default behavior for arrow keys to avoid page scrolling
-				if(['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(event.key.toLowerCase())) {
-					event.preventDefault();
+				switch(event.code) {
+					case 'KeyW': keys.w = true; break;
+					case 'KeyA': keys.a = true; break;
+					case 'KeyS': keys.s = true; break;
+					case 'KeyD': keys.d = true; break;
+					case 'Space': 
+						keys.space = true; 
+						if (onGround) {
+							playerVelocity.y = jumpForce;
+							onGround = false;
+						}
+						break;
 				}
 			}
 
 			function handleKeyUp(event) {
-				keysPressed[event.key.toLowerCase()] = false;
+				switch(event.code) {
+					case 'KeyW': keys.w = false; break;
+					case 'KeyA': keys.a = false; break;
+					case 'KeyS': keys.s = false; break;
+					case 'KeyD': keys.d = false; break;
+					case 'Space': keys.space = false; break;
+				}
 			}
 
-			function updateCharacter(deltaTime) {
+			function updatePlayer(deltaTime) {
 				// Apply gravity
-				if (!isOnGround) {
-					velocity.y -= gravity * deltaTime;
-				}
-
-				// Check for jump
-				if (keysPressed[' '] && isOnGround) {
-					velocity.y = jumpForce;
-					isOnGround = false;
-					isJumping = true;
-				}
-
-				// Movement controls
+				playerVelocity.y -= gravity * deltaTime;
+				
+				// Handle movement
 				const moveDirection = new THREE.Vector3(0, 0, 0);
 				
-				if (keysPressed['w'] || keysPressed['arrowup']) {
-					moveDirection.z -= 1;
-				}
-				if (keysPressed['s'] || keysPressed['arrowdown']) {
-					moveDirection.z += 1;
-				}
-				if (keysPressed['a'] || keysPressed['arrowleft']) {
-					moveDirection.x -= 1;
-				}
-				if (keysPressed['d'] || keysPressed['arrowright']) {
-					moveDirection.x += 1;
-				}
-
-				// Normalize movement direction if moving diagonally
-				if (moveDirection.length() > 0) {
-					moveDirection.normalize();
-					moveDirection.multiplyScalar(moveSpeed * deltaTime);
-					character.position.x += moveDirection.x;
-					character.position.z += moveDirection.z;
-				}
-
-				// Apply vertical velocity
-				character.position.y += velocity.y * deltaTime;
-
-				// Ground collision detection
-				if (character.position.y < 0.4) { // 0.4 is half the character height
-					character.position.y = 0.4;
-					velocity.y = 0;
-					isOnGround = true;
-					isJumping = false;
-				}
-
-				// Update character shadow
-				characterShadow.update(groundPlane, lightPosition4D);
-
-				// Make camera follow the character
-				updateCameraPosition();
-			}
-
-			function updateCameraPosition() {
-				// Position camera behind and above the character
-				const cameraOffset = new THREE.Vector3(0, 3, 8);
-				camera.position.copy(character.position).add(cameraOffset);
-				camera.lookAt(character.position);
-			}
-
-			function loadPetFromFile(event) {
-				const files = event.target.files;
-				if (!files || files.length === 0) return;
-				
-				let objFile = null;
-				let mtlFile = null;
-				
-				// Find OBJ and MTL files
-				for (let i = 0; i < files.length; i++) {
-					const file = files[i];
-					const extension = file.name.split('.').pop().toLowerCase();
+				// Get movement direction relative to camera
+				if (keys.w || keys.s || keys.a || keys.d) {
+					// Forward/backward movement
+					if (keys.w) {
+						moveDirection.x += Math.sin(cameraRotation.x);
+						moveDirection.z += Math.cos(cameraRotation.x);
+					}
+					if (keys.s) {
+						moveDirection.x -= Math.sin(cameraRotation.x);
+						moveDirection.z -= Math.cos(cameraRotation.x);
+					}
 					
-					if (extension === 'obj') {
-						objFile = file;
-					} else if (extension === 'mtl') {
-						mtlFile = file;
+					// Left/right movement (perpendicular to forward)
+					if (keys.a) {
+						moveDirection.x += Math.sin(cameraRotation.x + Math.PI/2);
+						moveDirection.z += Math.cos(cameraRotation.x + Math.PI/2);
+					}
+					if (keys.d) {
+						moveDirection.x -= Math.sin(cameraRotation.x + Math.PI/2);
+						moveDirection.z -= Math.cos(cameraRotation.x + Math.PI/2);
 					}
 				}
 				
-				if (!objFile) {
-					console.error('No OBJ file selected');
-					return;
+				if (moveDirection.length() > 0) {
+					moveDirection.normalize();
+					moveDirection.multiplyScalar(moveSpeed * deltaTime);
+					player.position.x += moveDirection.x;
+					player.position.z += moveDirection.z;
+					
+					// Rotate player to face movement direction
+					if (moveDirection.length() > 0) {
+						player.rotation.y = Math.atan2(moveDirection.x, moveDirection.z);
+					}
 				}
 				
-				// Create URLs for the files
-				const objUrl = URL.createObjectURL(objFile);
-				const mtlUrl = mtlFile ? URL.createObjectURL(mtlFile) : null;
+				// Apply vertical velocity (gravity and jumping)
+				player.position.y += playerVelocity.y * deltaTime;
 				
-				if (mtlUrl) {
-					// Load MTL first, then OBJ
-					const mtlLoader = new MTLLoader();
-					mtlLoader.load(
-						mtlUrl,
-						function (materials) {
-							materials.preload();
-							
-							// Load OBJ with materials
-							const objLoader = new OBJLoader();
-							objLoader.setMaterials(materials);
-							loadObj(objLoader, objUrl);
-							
-							// Revoke MTL URL
-							URL.revokeObjectURL(mtlUrl);
-						},
-						function (xhr) {
-							console.log('MTL ' + (xhr.loaded / xhr.total * 100) + '% loaded');
-						},
-						function (error) {
-							console.error('Error loading MTL:', error);
-							// If MTL fails, try loading OBJ without materials
-							const objLoader = new OBJLoader();
-							loadObj(objLoader, objUrl);
-						}
-					);
-				} else {
-					// Load OBJ without materials
-					const objLoader = new OBJLoader();
-					loadObj(objLoader, objUrl);
+				// Check ground collision
+				if (player.position.y < (playerSize/2 + 0.01)) {
+					player.position.y = playerSize/2 + 0.01;
+					playerVelocity.y = 0;
+					onGround = true;
 				}
 				
-				function loadObj(loader, url) {
-					loader.load(
-						url,
-						function (object) {
-							// If a pet already exists, remove it
-							if (pet) {
-								scene.remove(pet);
-								if (petShadow) scene.remove(petShadow);
-							}
-							
-							// Set up the pet
-							pet = object;
-							pet.scale.set(petScale, petScale, petScale);
-							
-							// Position the pet near the character
-							const petPosition = character.position.clone().add(petOffset);
-							pet.position.copy(petPosition);
-							
-							// If no MTL was provided, apply a default material
-							if (!mtlUrl) {
-								pet.traverse(function (child) {
-									if (child.isMesh) {
-										child.material = new THREE.MeshLambertMaterial({ 
-											color: 0xFFAA00, // Orange-ish color
-											emissive: 0x332200
-										});
-									}
-								});
-							}
-							
-							scene.add(pet);
-							
-							// Create shadow for the pet
-							petShadow = new ShadowMesh(pet);
-							scene.add(petShadow);
-							
-							petLoaded = true;
-							
-							// Revoke the OBJ URL
-							URL.revokeObjectURL(url);
-						},
-						function (xhr) {
-							console.log('OBJ ' + (xhr.loaded / xhr.total * 100) + '% loaded');
-						},
-						function (error) {
-							console.error('Error loading OBJ:', error);
-						}
-					);
-				}
+				// Simple bounds checking to keep the player on the ground plane
+				const groundWidth = 15;
+				const groundDepth = 20;
+				player.position.x = Math.max(-groundWidth, Math.min(groundWidth, player.position.x));
+				player.position.z = Math.max(-groundDepth, Math.min(groundDepth, player.position.z));
+				
+				// Update camera position based on player and rotation
+				updateCamera();
 			}
-
-			function updatePet(deltaTime) {
-				if (!petLoaded || !pet) return;
+			
+			function updateCamera() {
+				// Calculate camera position based on player position and camera rotation
+				const horizontalDistance = cameraDistance * Math.cos(cameraRotation.y);
 				
-				// Calculate target position (offset from character)
-				const targetPosition = character.position.clone().add(petOffset);
+				// Set the camera position
+				camera.position.x = player.position.x - horizontalDistance * Math.sin(cameraRotation.x);
+				camera.position.y = player.position.y + cameraHeight + cameraDistance * Math.sin(cameraRotation.y);
+				camera.position.z = player.position.z - horizontalDistance * Math.cos(cameraRotation.x);
 				
-				// Move pet towards target position with smooth following
-				const direction = new THREE.Vector3().subVectors(targetPosition, pet.position);
-				const distance = direction.length();
-				
-				// Only move if the pet is far enough from the target
-				if (distance > 0.1) {
-					direction.normalize();
-					direction.multiplyScalar(Math.min(petFollowSpeed * deltaTime, distance));
-					pet.position.add(direction);
-				}
-				
-				// Make pet look at character
-				pet.lookAt(character.position);
-				
-				// Update pet shadow
-				if (petShadow) {
-					petShadow.update(groundPlane, lightPosition4D);
-				}
+				// Set camera target to look at player
+				cameraTarget.copy(player.position);
+				cameraTarget.y += playerSize/2; // Look at the center of the player
+				camera.lookAt(cameraTarget);
 			}
 
 			function animate() {
 
 				frameTime = clock.getDelta();
-
-				// Update character physics and controls
-				updateCharacter(frameTime);
 				
-				// Update pet
-				updatePet(frameTime);
+				// Update player
+				updatePlayer(frameTime);
 
 				cube.rotation.x += 1.0 * frameTime;
 				cube.rotation.y += 1.0 * frameTime;
@@ -529,38 +560,47 @@
 				torus.position.y = Math.cos( verticalAngle ) * 2 + 3.3;
 
 				// update the ShadowMeshes to follow their shadow-casting objects
+				playerShadow.update( groundPlane, lightPosition4D );
 				cubeShadow.update( groundPlane, lightPosition4D );
 				cylinderShadow.update( groundPlane, lightPosition4D );
 				torusShadow.update( groundPlane, lightPosition4D );
 				sphereShadow.update( groundPlane, lightPosition4D );
 				pyramidShadow.update( groundPlane, lightPosition4D );
-				// Character shadow is updated in updateCharacter function
+				
+				// Update dynamically loaded object shadows
+				Object.values(loadedObjects).forEach(obj => {
+					if (obj.shadows && obj.shadows.length > 0) {
+						// Update each shadow for this object
+						obj.shadows.forEach(shadow => {
+							shadow.update(groundPlane, lightPosition4D);
+						});
+					}
+				});
 
 				renderer.render( scene, camera );
 
 			}
 
 			function onWindowResize() {
+
 				SCREEN_WIDTH = window.innerWidth;
 				SCREEN_HEIGHT = window.innerHeight;
 
-				renderer.setSize( SCREEN_WIDTH - 40, SCREEN_HEIGHT - 40 ); // Reduce size by padding amount
+				renderer.setSize( SCREEN_WIDTH, SCREEN_HEIGHT );
 
-				camera.aspect = (SCREEN_WIDTH - 40) / (SCREEN_HEIGHT - 40);
+				camera.aspect = SCREEN_WIDTH / SCREEN_HEIGHT;
 				camera.updateProjectionMatrix();
+
 			}
 
 			function lightButtonHandler() {
+				useDirectionalLight = !useDirectionalLight;
 
-				useDirectionalLight = ! useDirectionalLight;
-
-				if ( useDirectionalLight ) {
-
-					scene.background.setHex( 0x0096ff );
-
-					groundMesh.material.color.setHex( 0x008200 );
-					sunLight.position.set( 5, 7, - 1 );
-					sunLight.lookAt( scene.position );
+				if (useDirectionalLight) {
+					scene.background.setHex(0x0096ff);
+					groundMesh.material.color.setHex(0x008200);
+					sunLight.position.set(5, 7, -1);
+					sunLight.lookAt(scene.position);
 
 					lightPosition4D.x = sunLight.position.x;
 					lightPosition4D.y = sunLight.position.y;
@@ -573,19 +613,13 @@
 
 					lightSphere.visible = false;
 					lightHolder.visible = false;
-
-					document.getElementById( 'lightButton' ).value = 'Switch to PointLight';
-
 				} else {
-
-					scene.background.setHex( 0x000000 );
-
-					groundMesh.material.color.setHex( 0x969696 );
-
-					sunLight.position.set( 0, 6, - 2 );
-					sunLight.lookAt( scene.position );
-					lightSphere.position.copy( sunLight.position );
-					lightHolder.position.copy( lightSphere.position );
+					scene.background.setHex(0x000000);
+					groundMesh.material.color.setHex(0x969696);
+					sunLight.position.set(0, 6, -2);
+					sunLight.lookAt(scene.position);
+					lightSphere.position.copy(sunLight.position);
+					lightHolder.position.copy(lightSphere.position);
 					lightHolder.position.y += 0.12;
 
 					lightPosition4D.x = sunLight.position.x;
@@ -599,11 +633,112 @@
 
 					lightSphere.visible = true;
 					lightHolder.visible = true;
-
-					document.getElementById( 'lightButton' ).value = 'Switch to THREE.DirectionalLight';
-
 				}
+			}
 
+			// Function to collect and send object positions back to the server
+			function sendObjectPositions(requestId) {
+				// Create an object to hold all the position data
+				const positionsData = {
+					type: 'object-positions',
+					requestId: requestId,
+					timestamp: Date.now(),
+					player: {
+						id: 'player',
+						position: {
+							x: player.position.x,
+							y: player.position.y,
+							z: player.position.z
+						},
+						rotation: {
+							y: player.rotation.y
+						}
+					},
+					objects: {}
+				};
+				
+				// Add position data for all loaded objects
+				Object.entries(loadedObjects).forEach(([id, object]) => {
+					positionsData.objects[id] = {
+						position: {
+							x: object.position.x,
+							y: object.position.y,
+							z: object.position.z
+						},
+						rotation: {
+							x: object.rotation.x,
+							y: object.rotation.y,
+							z: object.rotation.z
+						},
+						scale: {
+							x: object.scale.x,
+							y: object.scale.y, 
+							z: object.scale.z
+						},
+						// Include bounding box information
+						boundingBox: getBoundingBoxForObject(object)
+					};
+				});
+				
+				// Add built-in scene objects
+				const sceneObjects = {
+					'cube': cube,
+					'cylinder': cylinder,
+					'torus': torus,
+					'sphere': sphere,
+					'pyramid': pyramid
+				};
+				
+				Object.entries(sceneObjects).forEach(([id, object]) => {
+					positionsData.objects[id] = {
+						position: {
+							x: object.position.x,
+							y: object.position.y,
+							z: object.position.z
+						},
+						rotation: {
+							x: object.rotation.x,
+							y: object.rotation.y,
+							z: object.rotation.z
+						},
+						scale: {
+							x: object.scale.x,
+							y: object.scale.y, 
+							z: object.scale.z
+						},
+						boundingBox: getBoundingBoxForObject(object)
+					};
+				});
+				
+				// Send the data back to the WebSocket server
+				if (websocket && websocket.readyState === WebSocket.OPEN) {
+					websocket.send(JSON.stringify(positionsData));
+					console.log('Sent object positions to server', positionsData);
+				} else {
+					console.warn('WebSocket not connected, cannot send object positions');
+				}
+			}
+			
+			// Helper function to get object bounding box
+			function getBoundingBoxForObject(object) {
+				const boundingBox = new THREE.Box3().setFromObject(object);
+				return {
+					min: {
+						x: boundingBox.min.x,
+						y: boundingBox.min.y,
+						z: boundingBox.min.z
+					},
+					max: {
+						x: boundingBox.max.x,
+						y: boundingBox.max.y,
+						z: boundingBox.max.z
+					},
+					size: {
+						x: boundingBox.max.x - boundingBox.min.x,
+						y: boundingBox.max.y - boundingBox.min.y,
+						z: boundingBox.max.z - boundingBox.min.z
+					}
+				};
 			}
 
 		</script>

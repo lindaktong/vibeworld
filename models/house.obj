@@ -1,0 +1,97 @@
+# Simple Colored House OBJ File
+# Reference material library
+mtllib simple_house.mtl
+
+# Vertices (x,y,z coordinates)
+# Base of the house (bottom face)
+v -1.0 0.0 -1.0
+v -1.0 0.0 1.0
+v 1.0 0.0 1.0
+v 1.0 0.0 -1.0
+
+# Top of the body (where roof begins)
+v -1.0 1.0 -1.0
+v -1.0 1.0 1.0
+v 1.0 1.0 1.0
+v 1.0 1.0 -1.0
+
+# Top of the roof
+v 0.0 2.0 -1.0
+v 0.0 2.0 1.0
+
+# Door vertices
+v -0.3 0.0 1.001
+v 0.3 0.0 1.001
+v -0.3 0.7 1.001
+v 0.3 0.7 1.001
+
+# Window vertices (front)
+v 0.5 0.5 1.001
+v 0.8 0.5 1.001
+v 0.5 0.8 1.001
+v 0.8 0.8 1.001
+
+# Window vertices (side)
+v 1.001 0.5 0.0
+v 1.001 0.8 0.0
+v 1.001 0.5 0.3
+v 1.001 0.8 0.3
+
+# Chimney vertices
+v 0.5 1.2 -0.3
+v 0.5 1.2 -0.5
+v 0.7 1.2 -0.5
+v 0.7 1.2 -0.3
+v 0.5 1.8 -0.3
+v 0.5 1.8 -0.5
+v 0.7 1.8 -0.5
+v 0.7 1.8 -0.3
+
+# Define groups and materials
+g floor
+usemtl grass
+# Ground floor face
+f 1 2 3 4
+
+# House walls
+g walls
+usemtl house_wall
+# Side walls
+f 1 5 6 2
+f 2 6 7 3
+f 3 7 8 4
+f 4 8 5 1
+
+# Roof
+g roof
+usemtl roof_red
+# Roof faces
+f 5 9 10 6
+f 6 10 7
+f 7 10 9 8
+f 8 9 5
+
+# Door
+g door
+usemtl door_wood
+f 11 13 14 12
+
+# Window (front)
+g window_front
+usemtl window_glass
+f 15 17 18 16
+
+# Window (side)
+g window_side
+usemtl window_glass
+f 19 21 22 20
+
+# Chimney
+g chimney
+usemtl chimney_brick
+f 23 27 28 24
+f 24 28 29 25
+f 25 29 30 26
+f 26 30 27 23
+f 27 30 29 28
+f 23 24 25 26

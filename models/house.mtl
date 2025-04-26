@@ -1,0 +1,49 @@
+# Material file for simple_house.obj
+
+# Grass material (green)
+newmtl grass
+Ka 0.1 0.3 0.1       # Ambient color
+Kd 0.2 0.6 0.2       # Diffuse color
+Ks 0.0 0.0 0.0       # Specular color
+d 1.0                # Opacity
+Ns 0                 # Shininess
+
+# House wall material (beige)
+newmtl house_wall
+Ka 0.85 0.8 0.65     # Ambient color
+Kd 0.85 0.8 0.65     # Diffuse color
+Ks 0.1 0.1 0.1       # Specular color
+d 1.0                # Opacity
+Ns 5                 # Shininess
+
+# Roof material (red)
+newmtl roof_red
+Ka 0.65 0.15 0.15    # Ambient color
+Kd 0.8 0.2 0.2       # Diffuse color 
+Ks 0.2 0.2 0.2       # Specular color
+d 1.0                # Opacity
+Ns 10                # Shininess
+
+# Door material (brown wood)
+newmtl door_wood
+Ka 0.33 0.22 0.13    # Ambient color
+Kd 0.42 0.28 0.17    # Diffuse color
+Ks 0.1 0.1 0.1       # Specular color
+d 1.0                # Opacity
+Ns 5                 # Shininess
+
+# Window material (blue glass)
+newmtl window_glass
+Ka 0.4 0.7 0.9       # Ambient color
+Kd 0.4 0.7 0.9       # Diffuse color
+Ks 0.6 0.6 0.6       # Specular color
+d 0.7                # Opacity (semi-transparent)
+Ns 50                # Shininess
+
+# Chimney material (dark grey brick)
+newmtl chimney_brick
+Ka 0.3 0.3 0.3       # Ambient color
+Kd 0.4 0.4 0.4       # Diffuse color
+Ks 0.1 0.1 0.1       # Specular color
+d 1.0                # Opacity
+Ns 5                 # Shininess

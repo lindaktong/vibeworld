@@ -1,0 +1,13 @@
+# Material file for tree.obj
+
+newmtl Trunk
+Ka 0.2 0.1 0.0
+Kd 0.5 0.25 0.1
+Ks 0.1 0.1 0.1
+Ns 10.0
+
+newmtl Foliage 
+Ka 0.0 0.2 0.0
+Kd 0.0 0.6 0.1
+Ks 0.1 0.2 0.1
+Ns 5.0 
