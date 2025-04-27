@@ -6,6 +6,112 @@ import random
 import time
 import logging
 import uuid
+import threading
+from elevenlabs import stream
+from elevenlabs.client import ElevenLabs
+from dotenv import load_dotenv
+import anthropic
+import os
+import assemblyai as aai
+load_dotenv()
+
+aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY")
+anthropic_client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+elevenlabs_client = ElevenLabs(
+    api_key=os.getenv("ELEVENLABS_API_KEY"),
+)
+
+model_response = None
+transcriber = None
+full_transcript = [
+    {"role": "user", "content": "The user is walking around in a blank 3d virtual world. You are a helpful assistant that can create 3D objects in the world by synthesizing a text prompt and calling an API for the user. Your goal is to respond to the user's ideas and help them add objects to the world. Listen to the user's thoughts. Then, create a prompt for the API describing the new object to add to the world. When it's time to give the API prompt, say, 'Let's create a <insert description of an object>.' Note that the object description should be brief but descriptive, and it should describe a standalone object that can be dropped into a 3d world (i.e. don't describe the background or surroundings of the object). Make the description short and concise. Don't say anything before 'let's create' since we want the object description to come out fast."},
+]
+
+
+def on_error(error: aai.RealtimeError):
+    print("An error occurred:", error)
+    return  
+
+def on_close():
+    pass
+
+def on_open(session_opened: aai.RealtimeSessionOpened):
+    print("Session ID:", session_opened.session_id)
+    return
+
+def start_transcription():
+    global transcriber
+    print("inside start transcription")
+    def transcription_thread():
+        global transcriber
+        transcriber = aai.RealtimeTranscriber(
+            sample_rate=16000,
+            on_data=on_data,
+            on_error=on_error,
+            on_open=on_open,
+            on_close=on_close,
+            end_utterance_silence_threshold=1000
+        )
+        transcriber.connect()
+        microphone_stream = aai.extras.MicrophoneStream(sample_rate=16000)
+        print('calling stream')
+        transcriber.stream(microphone_stream)
+        print('called stream')
+    
+    # Start transcription in a separate thread
+    thread = threading.Thread(target=transcription_thread)
+    thread.daemon = True  # Make thread terminate when main program exits
+    thread.start()
+    return thread
+
+def stop_transcription():
+    global transcriber
+    if transcriber:
+        transcriber.close()
+        transcriber = None
+
+def generate_audio(text: str):
+    global elevenlabs_client
+    global full_transcript
+    full_transcript.append({"role": "assistant", "content": text})
+    print(f"\nAI: {text}", end="\n")
+    audio_stream = elevenlabs_client.text_to_speech.convert(
+        text=text,
+        voice_id="JBFqnCBsd6RMkjVDRZzb",
+        model_id="eleven_multilingual_v2",
+        output_format="mp3_44100_128",
+    )
+    stream(audio_stream)
+
+def on_data(transcript: aai.RealtimeTranscript):
+    if not transcript.text:
+        return
+    if isinstance(transcript, aai.RealtimeFinalTranscript):
+        generate_ai_response(transcript.text)
+    else:
+        print(transcript.text, end="\r")
+
+def generate_ai_response(transcript: str):
+    global model_response
+    print("calling stop transcription")
+    stop_transcription()
+    print('calling anthropic')
+    global full_transcript
+    full_transcript.append({"role": "user", "content": transcript})
+    print(f"\nUser: {transcript}", end="\n")
+    
+    # USE CLAUDE HERE INSTEAD
+    response = anthropic_client.messages.create(
+        model="claude-3-7-sonnet-20250219",
+        max_tokens=1024,
+        messages=full_transcript
+    )
+    
+    # MAKE SURE THIS IS THE RIGHT RESPONSE
+    ai_response = response.content[0].text
+    model_response = ai_response
+    generate_audio(ai_response)
+    # start_transcription()
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -34,17 +140,53 @@ async def send_object(path="models/tree.glb", interval=5):
         path (str): Path to the 3D model file
         interval (int): Seconds between object placements
     """
+    greeting = "Hello! What do you want to explore today?"
+    generate_audio(greeting)
     while True:
         if CONNECTIONS:  # Only send if there are connections
             # First, request current positions from the client
+            breakpoint()
             await request_positions()
             await asyncio.sleep(1)  # Wait a moment for positions to come back
+
+            # Create an object based on user
+            global model_response
+            model_response = None
+            
+            # Start transcription in a separate thread
+            print("starting transcription")
+            transcription_thread = start_transcription()
+            print("started transcription")
+            
+            # Wait for the model response with timeout
+            timeout = 60  # 60 seconds timeout
+            start_time = time.time()
+            
+            while model_response is None:
+                print("Waiting for model response...")
+                await asyncio.sleep(2)
+                
+                # # Check if we've timed out
+                # if time.time() - start_time > timeout:
+                #     print("Timeout waiting for model response")
+                #     stop_transcription()
+                #     break
+            
+            # print(f"Model response: {model_response}")
+            
+            prompt = model_response
+            prompt = prompt.replace("Let's create", '')
+            clean_prompt = prompt.lower().replace(' ', '_').replace('/', '_').replace(',', '_').replace('.', '_').replace('\'', '_').replace('\"', '_').replace('(', '_').replace(')', '_')
+            path = f"models/{clean_prompt}.glb"
+            command = f"python test_model_generation_client.py text '{prompt}' -o '{path}'"
+            print(f"Running command: {command}")
+            os.system(command)
+            model_response = None
             
             # Get object type from filename (without extension)
             object_type = path.split('/')[-1].split('.')[0]
             
             # Create a message with positioning for the object
-            # Use world state to make smarter placement decisions if available
             object_position = generate_object_position()
             
             object_message = {
@@ -58,9 +200,12 @@ async def send_object(path="models/tree.glb", interval=5):
                     "z": 0
                 },
                 "scale": {
-                    "x": random.uniform(2.5, 7.5),
-                    "y": random.uniform(2.5, 7.5),
-                    "z": random.uniform(2.5, 7.5)
+                    # "x": random.uniform(2.5, 7.5),
+                    # "y": random.uniform(2.5, 7.5),
+                    # "z": random.uniform(2.5, 7.5)
+                    "x": 4,
+                    "y": 4,
+                    "z": 4
                 }
             }
 
@@ -186,7 +331,7 @@ async def main():
     
     # Start sending objects in the background
     asyncio.create_task(send_object(path="models/tree.glb", interval=5))
-    
+    # asyncio.create_task(send_object(path="models/cute_house.glb", interval=3))
     # Optional: Start sending other types of objects
     # asyncio.create_task(send_object(path="models/rock.glb", interval=8))
     # asyncio.create_task(send_object(path="models/flower.glb", interval=10))
