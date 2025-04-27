@@ -1,18 +1,14 @@
 # vibeworld
 
-A simple 3D walking simulator built with Three.js where you can explore an empty plain.
+1. Install Three.js
+2. Launch vite
+3. Go to http://localhost:5173/
+4. Run the websocket server: `python websocket_server.py`
 
-## Features
-- First-person camera controls
-- WASD movement
-- Simple terrain
+Built with
+- Claude
+- Three js
+- Eleven Labs
+- Trellis (via PyTorch)
 
-## How to Run
-1. Clone this repository
-2. Open `index.html` in your browser
-3. Use WASD keys to move around and mouse to look around
 
-## Technologies
-- Three.js
-- HTML5
-- JavaScript
