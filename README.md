@@ -1,5 +1,7 @@
 # vibeworld
 
+![](thumbnail.gif)
+
 1. Install Three.js
 2. Launch vite
 3. Go to http://localhost:5173/
