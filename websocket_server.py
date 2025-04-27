@@ -141,14 +141,15 @@ async def send_object(path="models/tree.glb", interval=5):
         interval (int): Seconds between object placements
     """
     greeting = "Hello! What do you want to explore today?"
+    
     generate_audio(greeting)
     while True:
         if CONNECTIONS:  # Only send if there are connections
             # First, request current positions from the client
             breakpoint()
-            await request_positions()
-            await asyncio.sleep(1)  # Wait a moment for positions to come back
-
+            # await request_positions()
+            # await asyncio.sleep(1)  # Wait a moment for positions to come back
+            
             # Create an object based on user
             global model_response
             model_response = None
